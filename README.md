@@ -20,7 +20,7 @@ Below are the computation times obtained with an ikd-Tree, a PH-Tree, and an i-O
 Extra notes:
 - After reading some issues on the ikd-Tree repo, it is advised to let the tree settle after insertion. I put a 50ms sleep that is not included in the graphs (but looking at the query graph, it does not seem sufficient...). PH-Trees are free from that constraint.
 - Not sure what I am doing wrong, but putting a simple OMP pragma around the query loop has a negative impact on the average ikd-Tree query time (PH-Tree and i-Octree show a clear speed-up).
-- In that benchmark, the PH-Tree and i-Octree use `double` (the default i-Octree `float` implementation has been modified to use `double`), whereas the ikd-Tree implementation uses `float` (a bit slower when changed to `double`). It could matters for long maps or when the map is anchored in a faraway reference frame (the 6 to 9 decimals of float could round point values).
+- In that benchmark, the PH-Tree and i-Octree use `double` (the default i-Octree `float` implementation has been modified to use `double`), whereas the ikd-Tree implementation uses `float` (a bit slower when changed to `double`). It could matter for long maps or when the map is anchored in a faraway reference frame (the 6 to 9 decimals of float could round point values).
 
 Overall, the Ph-Tree has the best insertion time (with per point insertion, while the other methods work best with batch insertion: with per-point insertion i-Octree is ~3x slower), but the i-Octree has the best query time.
 
