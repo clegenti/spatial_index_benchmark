@@ -4,14 +4,15 @@ import matplotlib
 matplotlib.rcParams['pdf.fonttype'] = 42
 matplotlib.rcParams['ps.fonttype'] = 42
 
-kPlotOmp = False
+kPlotOmp = True
 
 methods = {
     "PH-Tree" : ["build/spatial_indexing_times_phtree", "blue"],
     "ikd-Tree" : ["build/spatial_indexing_times_ikdtree", "orange"],
+    "i-Octree" : ["build/spatial_indexing_times_ioctree", "green"],
 }
 
-fig, ax = plt.subplots(1,2, figsize=(8, 3))
+fig, ax = plt.subplots(1,2, figsize=(10, 4))
 for method, filebase in methods.items():
     try:
         data_single_core = np.loadtxt(filebase[0] + ".csv", delimiter=',', skiprows=1)
@@ -38,19 +39,20 @@ for a in ax:
     a.set_xticklabels(x_labels)
     a.set_xlabel("Number of points in map")
     a.set_ylabel("Time (ms)")
-    a.legend(loc='upper left', framealpha=1.0)
+    a.legend(loc='upper center', framealpha=1.0)
 
 ax[0].set_title("Time for 20k insertions")
 ax[1].set_title("Time for 8k queries")
 
 
-plt.subplots_adjust(top=0.766,
-bottom=0.194,
-left=0.088,
-right=0.981,
-hspace=0.2,
-wspace=0.22)
-plt.suptitle("PH-Tree vs ikd-Tree timing (incrementally building and querying a 10M-point map)")
+#plt.subplots_adjust(top=0.766,
+#bottom=0.194,
+#left=0.088,
+#right=0.981,
+#hspace=0.2,
+#wspace=0.22)
+#plt.suptitle("PH-Tree vs ikd-Tree timing (incrementally building and querying a 10M-point map)")
+plt.tight_layout()
 if kPlotOmp:
     plt.savefig("timing_comparison_omp.png", dpi=300)
     plt.savefig("timing_comparison_omp.pdf")

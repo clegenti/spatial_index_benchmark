@@ -9,6 +9,8 @@
 
 #include "ikd_tree/ikd_tree.h"
 
+#include "i-octree/octree2/Octree.h"
+
 using namespace improbable::phtree;
 
 using PointType = ikdTree_PointType;
@@ -18,16 +20,21 @@ using PointVector = KD_TREE<PointType>::PointVector;
 
 #define PHTREE 0
 #define IKDTREE 1
+#define IOCTREE 2
 
-#define METHOD PHTREE
+//#define METHOD PHTREE
 //#define METHOD IKDTREE
+#define METHOD IOCTREE
 
 // Seems that the IKD-Tree needs to be defined globally https://github.com/hku-mars/ikd-Tree/issues/8#issuecomment-877589515
 #if METHOD == IKDTREE
 KD_TREE<ikdTree_PointType> ikd_tree;
 #endif
 
-
+struct CustomPoint
+{
+    double x, y, z;
+};
 
 // Main
 int main(int argc, char** argv)
@@ -38,6 +45,7 @@ int main(int argc, char** argv)
     const int kPerStepNumPoints = 20000;
     const double kLidarRange = 100.0;
     const int kNumQueriesPerStep = 8000;
+    const int kRemoveEveryNPts = 8;
 
     const int kNumSteps = kNumPoints / kPerStepNumPoints;
     const double kDistInterval = ((double)kTrajectoryLength) / kNumSteps;
@@ -46,11 +54,15 @@ int main(int argc, char** argv)
     #if METHOD == PHTREE
     // Create a PH-Tree with 3 dimensions and integer values
     PhTreeD<3, int> tree;
+    #elif METHOD == IOCTREE
+    // Create an i-Octree
+    thuni::Octree ioctree;
     #endif
 
     // Store times
     std::vector<double> time_insertions(kNumSteps);
     std::vector<double> time_queries(kNumSteps);
+    std::vector<double> time_removals(kNumSteps);
 
 
     // Loop over the trajectory
@@ -92,6 +104,35 @@ int main(int argc, char** argv)
         {
             ikd_tree.Add_Points(ikd_pts, false);
         }
+        #elif METHOD == IOCTREE
+        // Convert points to CustomPoint
+        std::vector<CustomPoint, Eigen::aligned_allocator<CustomPoint>> ioctree_pts(kPerStepNumPoints);
+        for (int i = 0; i < kPerStepNumPoints; i++)
+        {
+            ioctree_pts[i] = CustomPoint{pts(i, 0), pts(i, 1), pts(i, 2)};
+        }
+        if(step == 0)
+        {
+            ioctree.initialize(ioctree_pts);
+        }
+        else
+        {
+            ioctree.update(ioctree_pts);
+        }
+        //// Convert points to CustomPoint
+        //for (int i = 0; i < kPerStepNumPoints; i++)
+        //{
+        //    std::vector<CustomPoint, Eigen::aligned_allocator<CustomPoint>> ioctree_pts(1);
+        //    ioctree_pts[0] = CustomPoint{pts(i, 0), pts(i, 1), pts(i, 2)};
+        //    if(step == 0 && i == 0)
+        //    {
+        //        ioctree.initialize(ioctree_pts);
+        //    }
+        //    else
+        //    {
+        //        ioctree.update(ioctree_pts);
+        //    }
+        //}
         #endif
 
         // Save and display insertion time
@@ -142,12 +183,68 @@ int main(int argc, char** argv)
                 query_pts_res(i, 2) = pt.z;
                 break;
             }
+            #elif METHOD == IOCTREE
+            std::vector<size_t> results;
+            std::vector<double> dist_results;
+            CustomPoint ioctree_query_pt{query_pt[0], query_pt[1], query_pt[2]};
+            ioctree.knnNeighbors(ioctree_query_pt, 1, results, dist_results);
+            if(!results.empty())
+            {
+                size_t idx = results[0];
+                query_pts_res(i, 0) = ioctree_query_pt.x;
+                query_pts_res(i, 1) = ioctree_query_pt.y;
+                query_pts_res(i, 2) = ioctree_query_pt.z;
+            }
+            else
+            {
+                throw std::runtime_error("No nearest neighbor found in i-Octree");
+            }
             #endif
         }
         time_queries[step] = sw.stop();
         // Little sanity check and forcing compiler to not optimize away the queries
         std::cout << "Average query point: " << query_pts_res.colwise().mean() << std::endl;
         sw.print("Query time for step " + std::to_string(step) + ": ");
+
+
+        // Reset the stopwatch
+        sw.reset();
+        sw.start();
+        // Remove some points random
+        std::vector<Vec3> points_to_remove;
+        for(int i = 0; i < kPerStepNumPoints; i += kRemoveEveryNPts)
+        {
+            Vec3 pt = pts.row(i);
+            points_to_remove.push_back(pt);
+        }
+        #if METHOD == PHTREE
+        for(const auto& pt : points_to_remove)
+        {
+            PhPointD<3> ph_pt({pt[0], pt[1], pt[2]});
+            tree.erase(ph_pt);
+        }
+        #elif METHOD == IKDTREE
+        std::cout << "NOT IMPLEMENTED: Removal in IKD-Tree" << std::endl;
+        #elif METHOD == IOCTREE
+        const double quantum = 1e-6;
+        for(const auto& pt : points_to_remove)
+        {
+            thuni::BoxDeleteType box;
+            box.min[0] = pt[0] - quantum;
+            box.min[1] = pt[1] - quantum;
+            box.min[2] = pt[2] - quantum;
+            box.max[0] = pt[0] + quantum;
+            box.max[1] = pt[1] + quantum;
+            box.max[2] = pt[2] + quantum;
+            ioctree.boxWiseDelete(box, true);
+        }
+        #endif
+        time_removals[step] = sw.stop();
+        sw.print("Removal time for step " + std::to_string(step) + ": ");
+
+
+
+
     }
 
     // Write the times to file
@@ -155,6 +252,8 @@ int main(int argc, char** argv)
     std::string method_name = "phtree";
     #elif METHOD == IKDTREE
     std::string method_name = "ikdtree";
+    #elif METHOD == IOCTREE
+    std::string method_name = "ioctree";
     #endif
 
     #if USE_OMP
@@ -167,8 +266,10 @@ int main(int argc, char** argv)
     file << "InsertionTime_ms,QueryTime_ms\n";
     for (size_t i = 0; i < time_insertions.size(); i++)
     {
-        file << time_insertions[i] << "," << time_queries[i] << "\n";
+        file << time_insertions[i] << "," << time_queries[i] << "," << time_removals[i] << "\n";
     }
     file.close();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(5000));
     return 0;
 }
